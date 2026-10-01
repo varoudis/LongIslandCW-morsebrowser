@@ -12,12 +12,12 @@ const build = JSON.parse(sw.match(/const BUILD = (\{.*\})\n/)![1]) as {
 }
 const lazyAsset = build.assets.find(asset => asset.url.startsWith('src_wordfiles_POL_'))!.url
 const prefix = '/morsebrowser/dev/'
-type Host = { url: string, failed: string | null, corrupt: string | null, version: string, requests: string[], offline: boolean }
+type Host = { url: string, failed: string | null, corrupt: string | null, version: string, requests: string[], offline: boolean, replacements: Record<string, string> }
 
 // Real HTTP faults are necessary: Playwright routes do not intercept worker fetches.
 const test = base.extend<{ host: Host }>({
   host: async ({}, use) => {
-    const host: Host = { url: '', failed: null, corrupt: null, version: build.version, requests: [], offline: false }
+    const host: Host = { url: '', failed: null, corrupt: null, version: build.version, requests: [], offline: false, replacements: {} }
     const server = createServer((req, res) => {
       if (host.offline) { req.socket.destroy(); return }
       const pathname = decodeURIComponent(new URL(req.url!, 'http://localhost').pathname)
@@ -27,8 +27,16 @@ const test = base.extend<{ host: Host }>({
       host.requests.push(name)
       if (name.includes('..') || name === host.failed) { res.writeHead(503).end('unavailable'); return }
       try {
-        let data = readFileSync(join(dist, name))
-        if (name === 'service-worker.js') data = Buffer.from(sw.replace(`"version":"${build.version}"`, `"version":"${host.version}"`))
+        let data = host.replacements[name] === undefined ? readFileSync(join(dist, name)) : Buffer.from(host.replacements[name])
+        if (name === 'service-worker.js') {
+          const deployedBuild = {
+            version: host.version,
+            assets: build.assets.map(asset => host.replacements[asset.url] === undefined ? asset : {
+              ...asset, hash: createHash('sha256').update(host.replacements[asset.url]).digest('hex')
+            })
+          }
+          data = Buffer.from(sw.replace(/const BUILD = (\{.*\})\n/, () => `const BUILD = ${JSON.stringify(deployedBuild)}\n`))
+        }
         if (name === host.corrupt) data = Buffer.from('incorrect deployment bytes')
         const ext = name.split('.').pop()!
         const type = { js: 'text/javascript', html: 'text/html', css: 'text/css', webmanifest: 'application/manifest+json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg' }[ext]
@@ -193,6 +201,76 @@ test('missing cached chunk revokes readiness and can be repaired', async ({ page
   await network(context, host, false, browserName)
   await page.locator('#offline-download').click()
   await ready(page)
+})
+
+async function evictDocument (page: Page, scope: string) {
+  await page.evaluate(async scope => {
+    const key = (await caches.keys()).find(key => key.startsWith(`morse-offline:${scope}:`))!
+    await (await caches.open(key)).delete(new URL('index.html', scope).href)
+  }, scope)
+}
+
+test('evicted document recovers after a changed deployment without interrupting another window', async ({ page, context, host, browserName }) => {
+  await page.goto(host.url)
+  await ready(page)
+  await page.reload()
+  await page.getByRole('button', { name: 'Dark mode' }).click()
+  const practicing = await context.newPage()
+  await practicing.goto(host.url)
+  await ready(practicing)
+  await practicing.locator('#btnPlayButton').click()
+  await evictDocument(page, host.url)
+  host.replacements['index.html'] = readFileSync(join(dist, 'index.html'), 'utf8').replace('<body>', '<body data-deployment="recovered">')
+  host.version = 'changed-document-update'
+
+  const response = await page.goto(host.url + 'index.html?recovery-test=1')
+  expect(response!.status()).toBe(503)
+  await expect(page.getByRole('heading', { name: 'Restore Morse Browser' })).toBeVisible()
+  const status = page.getByRole('status', { name: 'App recovery status' })
+  await expect(status).toContainText('Update downloaded.', { timeout: 45000 })
+  await expect(status).toContainText('including this recovery page')
+  const retry = page.getByRole('button', { name: 'Retry opening app' })
+  await retry.focus()
+  await page.keyboard.press('Enter')
+  await expect(status).toContainText('Update downloaded.')
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await expect(practicing.getByRole('status', { name: 'Latest status announcement' })).toContainText(/Playing/i)
+  await expect.poll(() => practicing.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting?.state)).toBe('installed')
+  // Follow the recovery page's instructions; no skipWaiting during practice.
+  await page.close()
+  await practicing.close()
+  const probe = await context.newPage()
+  await probe.goto(new URL('/probe', host.url).href)
+  await expect.poll(() => probe.evaluate(async scope => {
+    const reg = await navigator.serviceWorker.getRegistration(scope)
+    return reg?.active?.state === 'activated' && !reg?.waiting
+  }, host.url)).toBe(true)
+  await probe.close()
+  await network(context, host, true, browserName)
+  const reopened = await context.newPage()
+  await reopened.goto(host.url)
+  await ready(reopened)
+  await expect(reopened.locator('body')).toHaveAttribute('data-deployment', 'recovered')
+  await expect(reopened.locator('html')).toHaveAttribute('data-theme', 'dark')
+})
+
+test('evicted document has an offline recovery page and retries the same build after reconnecting', async ({ page, context, host, browserName }) => {
+  await page.goto(host.url)
+  await ready(page)
+  await page.reload()
+  await evictDocument(page, host.url)
+  await network(context, host, true, browserName)
+  await page.goto(host.url + 'index.html?recovery-test=1')
+  await expect(page.getByRole('heading', { name: 'Restore Morse Browser' })).toBeVisible()
+  await expect(page.getByRole('status', { name: 'App recovery status' })).toContainText('Check your internet connection and retry.')
+  await network(context, host, false, browserName)
+  await page.getByRole('button', { name: 'Retry opening app' }).click()
+  await ready(page)
+  expect(page.url()).toBe(host.url + 'index.html?recovery-test=1')
 })
 
 test('failed update keeps old offline build; successful update waits for every open window', async ({ page, context, host, browserName }) => {

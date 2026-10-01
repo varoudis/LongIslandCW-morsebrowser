@@ -12,7 +12,9 @@ class OfflinePlugin {
       }, () => {
         if (compilation.errors.length) return
         const digest = data => crypto.createHash('sha256').update(data).digest('hex')
+        const recovery = fs.readFileSync(path.join(__dirname, '../src/offline/recovery.html'), 'utf8')
         const template = fs.readFileSync(path.join(__dirname, '../src/offline/service-worker.js'), 'utf8')
+          .replace('const RECOVERY = __OFFLINE_RECOVERY__', () => `const RECOVERY = ${JSON.stringify(recovery)}`)
         const assets = compilation.getAssets()
           .filter(asset => !/\.(map|zip)$/.test(asset.name))
           .map(asset => ({ url: asset.name, hash: digest(asset.source.buffer()) }))

@@ -1,6 +1,7 @@
 /* eslint-env serviceworker */
-/* global __OFFLINE_BUILD__ */
+/* global __OFFLINE_BUILD__, __OFFLINE_RECOVERY__ */
 const BUILD = __OFFLINE_BUILD__
+const RECOVERY = __OFFLINE_RECOVERY__
 const PREFIX = `morse-offline:${self.registration.scope}:`
 const CACHE = PREFIX + BUILD.version
 const COMPLETE = new URL('__offline_complete__', self.registration.scope).href
@@ -118,6 +119,14 @@ self.addEventListener('fetch', event => {
       return response
     } catch (_) {
       await announce({ type: 'FAILED' })
+      // The app cannot render its retry controls without its document. Embed
+      // recovery in the worker so it survives eviction of every cached asset.
+      if (appNavigation) {
+        return new Response(RECOVERY, {
+          status: 503,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+        })
+      }
       return new Response('Offline download incomplete. Reconnect and use Retry offline download.', { status: 503 })
     }
   })())

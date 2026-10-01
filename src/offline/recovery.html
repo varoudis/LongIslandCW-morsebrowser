@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restore Morse Browser</title>
+  <style>
+    :root { color-scheme: light dark; font: 1.125rem/1.5 system-ui, sans-serif; }
+    body { margin: 0; padding: 1rem; overflow-wrap: anywhere; }
+    main { max-width: 36rem; margin: 2rem auto; }
+    button { font: inherit; padding: .5rem 1rem; max-width: 100%; }
+    button:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Restore Morse Browser</h1>
+    <p>Some offline files are missing. Connect to the internet, then retry opening the app.</p>
+    <p id="recovery-status" role="status" aria-label="App recovery status" aria-live="polite" aria-atomic="true">Checking for an update…</p>
+    <button id="recovery-retry" type="button">Retry opening app</button>
+    <p>If an update is ready, finish practice in your other Morse Browser windows, close all app windows including this page, then reopen the app. Reloading this page alone will not apply a waiting update.</p>
+    <p>Your saved settings are kept. You do not need to clear website data.</p>
+  </main>
+  <script>
+    const status = document.getElementById('recovery-status')
+    const button = document.getElementById('recovery-retry')
+    const updateReady = 'Update downloaded. Close all Morse Browser windows, including this recovery page, then reopen the app.'
+    const unavailable = 'Could not download an update. Check your internet connection and retry.'
+
+    async function recover (reopen) {
+      button.disabled = true
+      status.textContent = 'Checking for an update…'
+      try {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (!registration) {
+          if (reopen) location.reload()
+          else status.textContent = 'Connect to the internet, then retry opening the app.'
+          return
+        }
+        // An already downloaded update can recover the app even while offline.
+        if (!registration.waiting) await registration.update()
+        const installing = registration.installing
+        if (installing) {
+          status.textContent = 'Downloading an update. Keep this window open.'
+          await new Promise((resolve, reject) => {
+            const changed = () => {
+              if (installing.state === 'redundant') {
+                installing.removeEventListener('statechange', changed)
+                reject(new Error('Download incomplete'))
+              } else if (installing.state === 'installed' || installing.state === 'activated') {
+                installing.removeEventListener('statechange', changed)
+                resolve()
+              }
+            }
+            installing.addEventListener('statechange', changed)
+            changed()
+          })
+        }
+        if (registration.waiting) status.textContent = updateReady
+        else if (reopen) location.reload()
+        else status.textContent = 'Connect to the internet, then retry opening the app.'
+      } catch (_) {
+        status.textContent = unavailable
+      } finally {
+        button.disabled = false
+      }
+    }
+
+    button.addEventListener('click', () => recover(true))
+    recover(false)
+  </script>
+</body>
+</html>

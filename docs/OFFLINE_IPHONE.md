@@ -94,6 +94,10 @@ alongside the active build; older caches for that scope are trimmed on activatio
 A failed candidate cannot activate, overwrite the old build, or remove its cache.
 If an old build's missing asset is no longer hosted, its repair cannot complete;
 a fully downloaded new build and closing/reopening the app restores readiness.
+If the cached page itself is missing, a **Restore Morse Browser** page checks for
+updates and provides **Retry opening app**. When it reports an update is ready,
+close every app window, including the recovery page, then reopen. Saved settings
+are kept; clearing website data is unnecessary.
 
 ## Automated checks
 
