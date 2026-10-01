@@ -1,0 +1,17 @@
+{
+	admin off
+}
+
+http://:8080 {
+	root * /srv
+	encode zstd gzip
+
+	# The service worker manages versioned offline caching. Revalidate HTTP
+	# downloads so an update always sees the current manifest and worker.
+	header Cache-Control "no-cache"
+	@manifest path /manifest.webmanifest
+	header @manifest Content-Type application/manifest+json
+
+	# Serve only real files: missing chunks must be 404s, not the opening page.
+	file_server
+}

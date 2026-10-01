@@ -57,6 +57,28 @@ npx playwright install chromium
 
 After adding or removing files under `src/wordfiles/`, `src/presets/configs/`, or `src/presets/sets/`, run `npm run prebuild` or `npm run build` so the generated dynamic import maps match files on disk.
 
+## Docker / Compose (Caddy)
+
+Docker builds the current checkout and serves the complete app with Caddy on port **19090**. No host Node installation or prebuilt `dist/` is needed.
+
+```bash
+docker compose up -d --build
+```
+
+Open `http://localhost:19090/` on the Docker host or `http://<server-ip>:19090/` from another device. View status/logs with `docker compose ps` and `docker compose logs -f morsebrowser`; stop with `docker compose down`.
+
+After a bugfix, run `docker compose up -d --build` again. Existing offline installations download the update online and activate it after all app windows close. Settings and offline downloads live in the browser; Compose volumes hold Caddy server state.
+
+For iPhone Home Screen **offline use**, expose this service through a trusted **HTTPS** URL. Plain HTTP on a LAN IP only serves the online app. If you already run Caddy on the Docker host, a domain entry can proxy to this port:
+
+```caddyfile
+practice.example.com {
+    reverse_proxy 127.0.0.1:19090
+}
+```
+
+Use your own DNS name and make the proxy's certificate-validation ports reachable. A proxy in another container should use a shared Docker network and `morsebrowser:8080`, or the Docker host's address. The bundled Caddy intentionally serves HTTP on port 19090 and requires no domain, certificates, or external proxy to start. See [the offline guide](docs/OFFLINE_IPHONE.md) for installation and readiness checks.
+
 ## Documentation
 
 - [docs/README.md](docs/README.md) - documentation index
