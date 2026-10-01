@@ -1,0 +1,14 @@
+{
+  "id": "./",
+  "name": "LICW Morse Browser",
+  "short_name": "Morse Browser",
+  "description": "Long Island CW Club Morse practice, available offline after download.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "./CW-Club-logo-clear400-300x300.png", "sizes": "300x300", "type": "image/png", "purpose": "any" }
+  ]
+}

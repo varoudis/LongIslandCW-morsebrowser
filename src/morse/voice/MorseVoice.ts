@@ -7,6 +7,7 @@ import { CookieInfo } from '../cookies/CookieInfo'
 import { GeneralUtils } from '../utils/general'
 import { MorseCookies } from '../cookies/morseCookies'
 import { VoiceBufferInfo } from './VoiceBufferInfo'
+import { selectPracticeVoice } from './voiceAvailability'
 
 type SpeechSynthesisVoiceWithIdx = SpeechSynthesisVoice & { idx: number }
 
@@ -87,8 +88,10 @@ export class MorseVoice implements ICookieHandler {
         this.voiceVoiceName(null)
         return null
       }
-      this.voiceVoiceName(this.voiceVoices()[this.voiceVoiceIdx()].name)
-      return this.voiceVoices()[this.voiceVoiceIdx()]
+      const voice = this.voiceVoices()[this.voiceVoiceIdx()]
+      if (!voice) return null
+      this.voiceVoiceName(voice.name)
+      return voice
     }, this)
 
     this.voiceVoiceName.extend({ saveCookie: 'voiceVoiceName' } as ko.ObservableExtenderOptions<boolean>)
@@ -216,7 +219,11 @@ export class MorseVoice implements ICookieHandler {
     // }
   }
 
+  speechWatchdog: ReturnType<typeof setTimeout> | null = null
+
   speakInfo = (morseVoiceInfo:MorseVoiceInfo) => {
+    clearTimeout(this.speechWatchdog)
+    this.speechWatchdog = null
     // A pending post-cancel follow-up (see cancelSpeech) would abort THIS new
     // utterance ~25ms in (Stop/Pause then a fast Play). Clear it now that we are
     // deliberately starting speech again.
@@ -228,13 +235,33 @@ export class MorseVoice implements ICookieHandler {
     // advance exactly once (Speak First waits on this before starting CW).
     // Hoisted above the try so the catch below can also call finish() exactly once.
     let finished = false
+    let watchdog: ReturnType<typeof setTimeout> | null = null
     const finish = () => {
       if (finished) {
         return
       }
       finished = true
+      clearTimeout(watchdog)
+      if (this.speechWatchdog === watchdog) this.speechWatchdog = null
       morseVoiceInfo.onEnd()
     }
+    // Remote voices may remain listed in airplane mode. Never wait on them.
+    morseVoiceInfo.voice = selectPracticeVoice(morseVoiceInfo.voice, this.voices, !navigator.onLine)
+    if (!navigator.onLine && !morseVoiceInfo.voice) {
+      this.logToFlaggedWords('No local voice available offline; continuing Morse practice.')
+      finish()
+      return
+    }
+    // Some synthesis engines fail silently, without end/error. Bound the wait
+    // so Voice First cannot permanently block locally generated Morse.
+    const timeout = Math.min(120000, Math.max(15000, morseVoiceInfo.textToSpeak.length * 1000 / Math.max(0.1, Number(morseVoiceInfo.rate))))
+    watchdog = setTimeout(() => {
+      if (finished) return
+      try { EasySpeech.cancel() } catch (_) { /* Speech is optional. */ }
+      this.logToFlaggedWords('Speech timed out; continuing Morse practice.')
+      finish()
+    }, timeout)
+    this.speechWatchdog = watchdog
     try {
       const esConfig = {
         logger: this.logToFlaggedWords,
@@ -287,7 +314,7 @@ export class MorseVoice implements ICookieHandler {
     this.logToFlaggedWords(`target:${target ? 'target found' : 'target not found'}`)
     // const selectedIndex = target ? (target as any).selectedIndex : -1
     const selectedVal = target && (target as any).value ? parseInt(`${(target as any).value}`) : -1
-    const idx = this.voiceVoiceIdx() ? this.voiceVoiceIdx() : -1
+    const idx = this.voiceVoiceIdx() ?? -1
     this.logToFlaggedWords(`selectedVal:${selectedVal}`)
     this.logToFlaggedWords(`idx:${idx}`)
     if (idx !== selectedVal) {
@@ -333,6 +360,8 @@ export class MorseVoice implements ICookieHandler {
   cancelSpeechFollowUpHandle:ReturnType<typeof setTimeout> | null = null
 
   cancelSpeech = () => {
+    clearTimeout(this.speechWatchdog)
+    this.speechWatchdog = null
     this.speechGeneration++
     if (this.cancelSpeechFollowUpHandle) {
       clearTimeout(this.cancelSpeechFollowUpHandle)

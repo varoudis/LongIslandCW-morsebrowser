@@ -7,17 +7,29 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LICW Morse Practice Page</title>
+    <link rel="manifest" href="./offline/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./assets/CW-Club-logo-clear400-300x300.png">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Morse Browser">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <!-- Global site tag (gtag.js) - Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-STMHYHNZTJ"></script>
+
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag() { dataLayer.push(arguments); }
         gtag('js', new Date());
 
-        gtag('config', 'G-STMHYHNZTJ');
+        if (navigator.onLine) {
+            var analytics = document.createElement('script');
+            analytics.async = true;
+            analytics.src = 'https://www.googletagmanager.com/gtag/js?id=G-STMHYHNZTJ';
+            document.head.appendChild(analytics);
+            gtag('config', 'G-STMHYHNZTJ');
+        }
     </script>
     <!-- Google Tag Manager -->
-    <script>(function (w, d, s, l, i) {
+    <script>if (navigator.onLine) (function (w, d, s, l, i) {
             w[l] = w[l] || []; w[l].push({
                 'gtm.start':
                     new Date().getTime(), event: 'gtm.js'
@@ -38,10 +50,6 @@
 <!--test8 test6 -->
 
 <body>
-    <!-- Google Tag Manager (noscript) -->
-    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PB8HW3M" height="0" width="0"
-            style="display:none;visibility:hidden"></iframe></noscript>
-    <!-- End Google Tag Manager (noscript) -->
     <main class="container-fluid page-container">
         <div class="row gy-3 row-cols-1">
             <!-- title header area-->
@@ -72,6 +80,17 @@
                     </div>
                 </div>
             </header>
+
+            <section class="col" aria-label="Offline installation">
+                <details class="offline-installation">
+                    <summary>Offline app: <span id="offline-status" aria-label="Offline download status" role="status" aria-live="polite" aria-atomic="true">Checking offline download…</span></summary>
+                    <p id="offline-detail" aria-label="Offline download progress" role="status" aria-live="polite" aria-atomic="true"></p>
+                    <button id="offline-download" type="button" class="btn btn-outline-secondary btn-sm">Retry offline download</button>
+                    <p id="offline-storage" class="mt-2"></p>
+                    <p>On iPhone, use Safari’s Share menu → Add to Home Screen. Open the Home Screen app online and wait for “Ready for offline use” before testing in airplane mode.</p>
+                    <p>Settings are saved on this device. Clearing website data removes settings and offline downloads. RSS and external help links require a connection. Offline speech depends on installed voices; Morse tones work without speech. Background and locked-screen playback are not verified.</p>
+                </details>
+            </section>
 
             <!-- settings area-->
             <section class="col speed-settings-section" title="Basic settings" aria-label="Basic settings"
@@ -688,6 +707,7 @@
                                 <p id="voiceOptionsHelp" class="sr-only">
                                     Voice Options control spoken recaps, spelling, timing, speaker, volume, pitch, and rate.
                                 </p>
+                                <p>Offline speech uses local voices where available. If speech is unavailable, Morse practice continues.</p>
                                 <div class="row row-cols-5 gx-2 gy-2">
                                     <div class="input-group">
                                         <div class="col-auto">

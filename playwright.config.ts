@@ -21,6 +21,11 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       testIgnore: '**/settings-layout-mobile.spec.ts'
     },
+    ...(process.env.TEST_WEBKIT === '1' ? [{
+      name: 'webkit-offline',
+      use: { ...devices['iPhone 13'] },
+      testMatch: '**/offline.spec.ts'
+    }] : []),
     {
       name: 'mobile-chrome',
       use: { ...devices['Pixel 5'] },

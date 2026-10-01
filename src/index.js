@@ -1,4 +1,6 @@
+/* global __OFFLINE_ENABLED__ */
 import ko from 'knockout'
+import { initOfflineApp } from './offline/offline.ts'
 // see https://getbootstrap.com/docs/5.0/getting-started/webpack/
 import 'bootstrap/dist/css/bootstrap.min.css'
 // You can specify which plugins you need
@@ -14,3 +16,5 @@ import { MorseViewModel } from './morse/morse.ts'
 applyTheme(readDarkModeFromCookie())
 
 ko.applyBindings(new MorseViewModel())
+
+initOfflineApp(__OFFLINE_ENABLED__)

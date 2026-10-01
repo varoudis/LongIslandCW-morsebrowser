@@ -4,8 +4,9 @@ const webpack = require('webpack')
 const CopyPlugin = require('copy-webpack-plugin')
 const ESLintPlugin = require('eslint-webpack-plugin')
 const MiniCssExtractPlugin = require('mini-css-extract-plugin')
+const OfflinePlugin = require('./build/OfflinePlugin')
 
-const ghPagesPublicPath = process.env.GITHUB_PAGES === 'true' ? '/morsebrowser_dev/' : 'auto'
+const ghPagesPublicPath = process.env.PUBLIC_PATH || (process.env.GITHUB_PAGES === 'true' ? '/morsebrowser_dev/' : 'auto')
 
 module.exports = {
   mode: 'development',
@@ -38,6 +39,7 @@ module.exports = {
   },
   devtool: 'inline-source-map',
   plugins: [
+    new webpack.DefinePlugin({ __OFFLINE_ENABLED__: JSON.stringify(!process.env.WEBPACK_SERVE) }),
     new HtmlWebpackPlugin(
       {
         title: 'Morse Tool',
@@ -63,7 +65,9 @@ module.exports = {
     }),
     */
     new MiniCssExtractPlugin({ filename: '[name].[contenthash].css' }),
-    new ESLintPlugin()
+    new ESLintPlugin(),
+    // Dev-server/HMR builds are intentionally not installed for offline use.
+    ...(!process.env.WEBPACK_SERVE ? [new OfflinePlugin()] : [])
   ],
   module: {
     rules: [
@@ -80,7 +84,7 @@ module.exports = {
         use: ['babel-loader']
       },
       {
-        test: /\.(png|svg|jpg|jpeg|gif)$/i,
+        test: /\.(png|svg|jpg|jpeg|gif|webmanifest)$/i,
         type: 'asset/resource'
       },
       {

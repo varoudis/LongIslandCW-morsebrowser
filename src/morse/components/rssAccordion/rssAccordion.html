@@ -15,6 +15,7 @@
 </h2>
 <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne">
     <div class="accordion-body">
+        <p data-bind="visible: !rss.rssOnline()" role="status">RSS downloads need an internet connection. Polling is stopped while offline.</p>
         <div class="row row-cols-3 gy-2 gx-2">
             <div class="col-auto">
                 <div class="input-group-vertical">
@@ -46,7 +47,7 @@
                 <div class="btn-toolbar" role="toolbar">
 
                     <button type="button" class="btn btn-success"
-                        data-bind="text: rss.pollRssButtonText, click: rss.doRSS"></button>
+                        data-bind="text: rss.pollRssButtonText, click: rss.doRSS, enable: rss.rssOnline"></button>
                     <button type="button" class="btn btn-secondary"
                         data-bind="text: rss.playRssButtonText, click: rss.doRssPlay"></button>
                     <button type="button" class="btn btn-danger" data-bind="click: rss.doRSSReset">Mark

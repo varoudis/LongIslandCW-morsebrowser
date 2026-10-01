@@ -17,6 +17,8 @@ The app includes LICW lesson catalogs, settings presets, card-based practice, vo
 
 **If you just want to practice Morse, use the club site:** https://longislandcw.github.io/morsebrowser/index.html
 
+For iPhone Home Screen installation and offline practice, see [the offline app guide](docs/OFFLINE_IPHONE.md).
+
 Or download https://longislandcw.github.io/morsebrowser/download/morse.zip and unzip somewhere on your device, then open index.html in your browser.
 
 # Found a bug, or have a feature suggestion?
@@ -59,6 +61,7 @@ After adding or removing files under `src/wordfiles/`, `src/presets/configs/`, o
 
 - [docs/README.md](docs/README.md) - documentation index
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - architecture, UI, build, tests, deployment
+- [docs/OFFLINE_IPHONE.md](docs/OFFLINE_IPHONE.md) - HTTPS hosting, iPhone installation, offline readiness, updates and limitations
 - [docs/SPEED_RACER.md](docs/SPEED_RACER.md) - Speed Racer behavior, presets, and deep links
 - [tests/README.md](tests/README.md) - Vitest and Playwright guidance
 - [MAINTAINERS.md](MAINTAINERS.md) - maintainer checklist and source map

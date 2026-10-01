@@ -6,6 +6,7 @@ import { RssConfig } from './RssConfig'
 import { RssTitle } from './RssTitle'
 export default class MorseRssPlugin implements ICookieHandler {
   rssConfig:RssConfig
+  rssOnline = ko.observable(navigator.onLine)
   rssFeedUrl:ko.Observable<string> = ko.observable('https://moxie.foxnews.com/feedburner/latest.xml').extend({ saveCookie: 'rssFeedUrl' } as ko.ObservableExtenderOptions<boolean>)
   proxydUrl:ko.Observable<string> = ko.observable('http://127.0.0.1:8085/').extend({ saveCookie: 'proxydUrl' } as ko.ObservableExtenderOptions<boolean>)
   rssPlayMins = ko.observable(5).extend({ saveCookie: 'rssPlayMins' } as ko.ObservableExtenderOptions<boolean>)
@@ -26,6 +27,12 @@ export default class MorseRssPlugin implements ICookieHandler {
   constructor (rssConfig:RssConfig) {
     MorseCookies.registerHandler(this)
     this.rssConfig = rssConfig
+    window.addEventListener('offline', () => {
+      this.rssOnline(false)
+      this.rssPollingOn(false)
+      clearTimeout(this.rssPollTimerHandle)
+    })
+    window.addEventListener('online', () => this.rssOnline(true))
   }
 
   unreadRssCount:ko.Computed<number> = ko.computed(() => {
@@ -111,6 +118,12 @@ export default class MorseRssPlugin implements ICookieHandler {
   }
 
   doRSSCallback = () => {
+    if (!navigator.onLine) {
+      this.rssOnline(false)
+      this.rssPollingOn(false)
+      clearTimeout(this.rssPollTimerHandle)
+      return
+    }
     if (this.rssPollingOn() && !this.rssPolling()) {
       const msSince = Date.now() - this.lastRSSPoll()
       const minSince = msSince / 1000 / 60
@@ -130,9 +143,9 @@ export default class MorseRssPlugin implements ICookieHandler {
           parser.parseURL(this.proxydUrl() + this.rssFeedUrl().toString(), (err, feed) => {
             if (err) {
               this.lastRSSPoll(Date.now())
-              alert('rss error')
               this.rssPolling(false)
-              throw err
+              if (navigator.onLine) alert('RSS could not be downloaded. Check the feed and proxy connection.')
+              return
             }
             // console.log(feed.title);
             // note the reversal to get a fifo
@@ -146,6 +159,9 @@ export default class MorseRssPlugin implements ICookieHandler {
             this.rssPollMinsToWait(this.rssPollMins())
             this.rssPolling(false)
           })
+        }).catch(() => {
+          this.lastRSSPoll(Date.now())
+          this.rssPolling(false)
         })
       } else {
         this.rssPollMinsToWait(this.rssPollMins() - minSince)
@@ -162,6 +178,7 @@ export default class MorseRssPlugin implements ICookieHandler {
   }
 
   doRSS = () => {
+    if (!navigator.onLine) return
     this.rssPollingOn(!this.rssPollingOn())
     if (this.rssPollingOn()) {
       this.doRSSCallback()

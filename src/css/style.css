@@ -662,3 +662,7 @@ section[aria-label="Cards"] .row {
     }
 }
 
+
+.offline-installation summary { cursor: pointer; }
+.offline-installation summary:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+.offline-installation p { margin-top: .75rem; margin-bottom: .75rem; }

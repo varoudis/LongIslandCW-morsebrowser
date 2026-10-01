@@ -37,7 +37,16 @@ Run the focused accessibility checks:
 npx playwright test e2e/accessibility.spec.ts
 ```
 
-The accessibility spec uses `@axe-core/playwright` and also asserts screen-reader-facing names/descriptions for keyboard shortcuts, Speed Racer, Voice, Tone, Input, Output, Flagged cards, Noise, RSS, and the single polite live region.
+The accessibility spec uses `@axe-core/playwright` and also asserts screen-reader-facing names/descriptions for keyboard shortcuts, Speed Racer, Voice, Tone, Input, Output, Flagged cards, Noise, RSS, and the separately named playback and offline live regions.
+
+Offline tests exercise a real build in a nested deployment directory and cache every lazy import before closing and reopening with networking disabled. They also cover storage refusal, partial/corrupt downloads, missing-cache repair, multi-window updates and narrow accessible controls. Optional WebKit coverage uses an origin socket cutoff because Playwright's WebKit offline toggle rejects cached navigation; it does not substitute for testing on an iPhone.
+
+```bash
+npx playwright install webkit
+TEST_WEBKIT=1 npx playwright test e2e/offline.spec.ts --project=webkit-offline
+```
+
+See [the offline guide](../docs/OFFLINE_IPHONE.md) for the device checklist and limitations.
 
 ## CI
 
