@@ -38,6 +38,12 @@ Examples
   # Your own text with settings saved from the site (Save Settings -> LICWSettings.json)
   tools/morse_audio_export.py render --text-file mytext.txt --preset-file LICWSettings.json
 
+  # Longer random-group lesson (Override time = 10 minutes of Morse)
+  tools/morse_audio_export.py render --class BC1 --group LCD --lesson "LCD PSG TIN REA" --minutes 10 --group-size 3
+
+  # Use the built-in macOS voices instead of the TTS server
+  tools/morse_audio_export.py render ... --tts-engine say --say-voice Daniel --say-rate 140
+
   # Override any setting by its preset key
   tools/morse_audio_export.py render ... --set wpm=20 --set voiceEnabled=false
 
@@ -357,6 +363,7 @@ class Settings:
             # lessons
             'stickySets': '', 'ifStickySets': False, 'overrideSize': False, 'overrideSizeMin': 3,
             'overrideSizeMax': 3, 'syncSize': True, 'shuffleIntraGroup': False, 'isShuffledSet': False,
+            'ifOverrideTime': False, 'overrideMins': 2,  # Lesson Options > Overrides > Override time (UI only)
             # voice
             'voiceEnabled': False, 'voiceSpelling': True, 'voiceThinkingTime': 0, 'voiceAfterThinkingTime': 0,
             'voiceVolume': 10, 'voiceLastOnly': False, 'voiceRecap': False, 'voiceBufferMaxLength': 1,
@@ -420,7 +427,9 @@ class Settings:
         # MorseLessonPlugin.handleCookies
         if 'stickySets' in given:
             d['stickySets'] = str(given['stickySets'])
-        for k in ('ifStickySets', 'overrideSize', 'shuffleIntraGroup', 'isShuffledSet'):
+        if 'overrideMins' in given:
+            d['overrideMins'] = js_float(given['overrideMins'], 2)
+        for k in ('ifStickySets', 'overrideSize', 'shuffleIntraGroup', 'isShuffledSet', 'ifOverrideTime'):
             if k in given:
                 d[k] = to_bool(given[k])
         if 'overrideSizeMin' in given:
@@ -659,7 +668,7 @@ def random_word_list(data, st, rng):
     if st['ifStickySets'] and st['stickySets'].strip():
         stickys = '|' + re.sub(' ', '|', st['stickySets'].upper().strip().replace('  ', ' '))
     chars = re.findall(f'<.*?>{stickys}|[^<.*?>]|\\W', str(data['letters']).upper())
-    control_time = data.get('practiceSeconds')
+    control_time = st['overrideMins'] * 60 if st['ifOverrideTime'] else data.get('practiceSeconds')
     min_size = st.override_min if st['overrideSize'] else data.get('minWordSize', 1)
     max_size = st.override_max if st['overrideSize'] else data.get('maxWordSize', 1)
     min_size, max_size = js_int(min_size, 1), js_int(max_size, 1)
@@ -1079,6 +1088,9 @@ class TTSClient:
             folder += '_' + slug(language)
         if instruct:
             folder += '_instruct-' + hashlib.sha1(instruct.encode('utf-8')).hexdigest()[:6]
+        self._init_cache(cache_dir, folder, concurrency, sample_rate, peak, trim)
+
+    def _init_cache(self, cache_dir, folder, concurrency, sample_rate, peak, trim):
         self.cache_dir = Path(cache_dir).expanduser() / folder
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._index_path = self.cache_dir / 'index.json'
@@ -1118,40 +1130,52 @@ class TTSClient:
             tmp_index.write_text(json.dumps(self._index, ensure_ascii=False, indent=1, sort_keys=True), encoding='utf-8')
             tmp_index.replace(self._index_path)
 
-    def _fetch(self, text):
-        path = self._cached_path(text)
-        if path:
-            return path.read_bytes()
+    def _synthesize(self, text):
         body = {'input': text, 'voice': self.voice, 'response_format': 'wav', 'speed': self.speed,
                 'language': self.language}
         if self.instruct:
             body['instruct'] = self.instruct
         req = urllib.request.Request(self.base_url + '/v1/audio/speech', data=json.dumps(body).encode('utf-8'),
                                      headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return r.read()
+
+    def _fetch(self, text, attempts=4):
+        path = self._cached_path(text)
+        if path:
+            return path.read_bytes()
         err = None
-        for attempt in range(4):
+        for attempt in range(attempts):
             try:
-                with urllib.request.urlopen(req, timeout=180) as r:
-                    data = r.read()
+                data = self._synthesize(text)
                 parse_wav(data)
                 self._store(text, data)
                 return data
-            except (urllib.error.URLError, OSError, ValueError) as e:
+            except (urllib.error.URLError, OSError, ValueError, subprocess.CalledProcessError) as e:
                 err = e
-                time.sleep(1.5 * (attempt + 1))
+                if attempt + 1 < attempts:
+                    time.sleep(2 * (attempt + 1))
         raise RuntimeError(f'TTS failed for {text!r}: {err}')
 
     def prefetch(self, texts):
         todo = [t for t in dict.fromkeys(texts) if t and not self._cached_path(t)]
         if not todo:
             return
-        done = 0
+        done, failed = 0, []
         with concurrent.futures.ThreadPoolExecutor(self.concurrency) as pool:
-            for fut in concurrent.futures.as_completed([pool.submit(self._fetch, t) for t in todo]):
-                fut.result()
-                done += 1
+            futures = {pool.submit(self._fetch, t): t for t in todo}
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    fut.result()
+                    done += 1
+                except RuntimeError:
+                    failed.append(futures[fut])
                 print(f'\r  TTS {done}/{len(todo)}', end='', file=sys.stderr, flush=True)
         print(file=sys.stderr)
+        # The server can return 500s under parallel load; retry the leftovers one at a time.
+        for t in failed:
+            print(f'  retrying {t!r} alone', file=sys.stderr)
+            self._fetch(t, attempts=6)
 
     def clip(self, text):
         if text in self._clips:
@@ -1173,6 +1197,34 @@ class TTSClient:
 
     def duration_ms(self, text):
         return len(self.clip(text)) * 1000.0 / self.sample_rate
+
+
+class SayTTS(TTSClient):
+    """macOS `say` instead of the TTS server. Spelled letters ("A. B. C.") get an explicit
+    [[slnc N]] pause between them, e.g. say -v Daniel -r 140 "A. [[slnc 250]] B. [[slnc 250]] C."""
+
+    def __init__(self, voice, rate, letter_gap_ms, cache_dir, concurrency, sample_rate, peak, trim):
+        if not shutil.which('say'):
+            sys.exit('error: --tts-engine say needs macOS (the `say` command was not found)')
+        self.voice = voice
+        self.rate = rate
+        self.letter_gap_ms = letter_gap_ms
+        folder = f'say-{slug(voice)}_r{rate}_gap{letter_gap_ms}'
+        self._init_cache(cache_dir, folder, concurrency, sample_rate, peak, trim)
+
+    def check(self):
+        return True
+
+    def _synthesize(self, text):
+        spoken = text
+        if self.letter_gap_ms > 0:
+            spoken = text.replace('. ', f'. [[slnc {self.letter_gap_ms}]] ')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'say.wav'
+            subprocess.run(['say', '-v', self.voice, '-r', str(self.rate), '-o', str(out),
+                            '--file-format=WAVE', f'--data-format=LEI16@{self.sample_rate}', '--', spoken],
+                           check=True, capture_output=True)
+            return out.read_bytes()
 
 
 # ---------------------------------------------------------------------------
@@ -1333,6 +1385,11 @@ def slug(*parts):
 
 def plan_jobs(cat, args):
     user_sets = parse_sets(args.set)
+    if args.group_size:
+        user_sets += [('overrideSize', True), ('syncSize', True), ('overrideSizeMin', args.group_size),
+                      ('overrideSizeMax', args.group_size)]
+    if args.minutes:
+        user_sets += [('ifOverrideTime', True), ('overrideMins', args.minutes)]
     if args.no_voice:
         user_sets.append(('voiceEnabled', False))
 
@@ -1436,7 +1493,11 @@ def cmd_render(cat, args):
     if args.output and len(jobs) > 1:
         sys.exit('error: -o/--output names one file; use --out-dir when rendering several')
     tts = None
-    if args.tts_url:
+    if args.tts_engine == 'say':
+        cache_dir = args.cache_dir or (Path(args.output).parent if args.output else Path(args.out_dir)) / 'tts_cache'
+        tts = SayTTS(args.say_voice, args.say_rate, args.say_letter_gap, cache_dir, args.tts_concurrency,
+                     args.sample_rate, 10 ** (args.voice_db / 20), not args.no_trim)
+    elif args.tts_url:
         cache_dir = args.cache_dir or (Path(args.output).parent if args.output else Path(args.out_dir)) / 'tts_cache'
         tts = TTSClient(args.tts_url, args.tts_voice, args.tts_speed, args.tts_language, args.tts_instruct,
                         cache_dir, args.tts_concurrency, args.sample_rate,
@@ -1516,6 +1577,11 @@ def main(argv=None):
     rp.add_argument('--preset-file', help='settings JSON (e.g. LICWSettings.json saved from the site)')
     rp.add_argument('--set', action='append', metavar='KEY=VALUE',
                     help='override a setting by preset key (repeatable), e.g. wpm=20 voiceEnabled=false')
+    rp.add_argument('--group-size', type=int,
+                    help='Override size: letters per random group (sets min = max, like linked size on the site)')
+    rp.add_argument('--minutes', type=float,
+                    help='Override time: minutes of Morse for generated (random group) lessons, like the site; '
+                         'voice and pauses add to the file length')
     rp.add_argument('--no-voice', action='store_true', help='Morse only')
     rp.add_argument('--arm-recap', choices=['end', 'none'], default='end',
                     help='Arm Recap presets: speak the recap after the Morse (default) or skip it')
@@ -1530,6 +1596,12 @@ def main(argv=None):
     rp.add_argument('--cues', action='store_true', help='also write a .cues.txt timeline next to the audio')
     rp.add_argument('--dry-run', action='store_true', help='print the timeline only (no TTS, no audio)')
     rp.add_argument('--dry-run-lines', type=int, default=40)
+    rp.add_argument('--tts-engine', choices=['server', 'say'], default='server',
+                    help='server: OpenAI-style TTS server (default); say: macOS built-in voices')
+    rp.add_argument('--say-voice', default='Daniel', help='macOS voice for --tts-engine say (see `say -v ?`)')
+    rp.add_argument('--say-rate', type=int, default=140, help='words per minute for say (default 140)')
+    rp.add_argument('--say-letter-gap', type=int, default=250,
+                    help='silence in ms between spelled letters for say (default 250, 0 = none)')
     rp.add_argument('--tts-url', default=DEFAULT_TTS_URL, help=f'TTS base URL (default {DEFAULT_TTS_URL})')
     rp.add_argument('--tts-voice', default=DEFAULT_TTS_VOICE, help='TTS voice (default Aiden)')
     rp.add_argument('--tts-speed', type=float, default=1.0)
