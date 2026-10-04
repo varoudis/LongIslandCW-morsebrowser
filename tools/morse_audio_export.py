@@ -8,7 +8,9 @@ replays the web app's playback rules offline: card repeats and repeat spacing,
 PRE padding, card wait, Farnsworth timing, Speed Intervals, Speed Racer, and the
 voice modes (Voice after each card, Voice First, Voice Buffer, Last Only,
 Speed Racer recap, Arm Recap). Speech comes from an OpenAI-style TTS server
-(`POST /v1/audio/speech`), cached on disk so repeated words are fetched once.
+(`POST /v1/audio/speech`). Clips are kept next to the audio in
+tts_cache/<voice>/ (named after the spoken text, see index.json there) so
+later renders reuse them instead of asking the server again.
 
 Selection mirrors the site's LICW Lessons pickers / deep links:
 TYPE (--type), CLASS (--class), CONTENT (--group), LESSON (--lesson),
@@ -56,6 +58,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -1068,8 +1071,19 @@ class TTSClient:
         self.speed = speed
         self.language = language
         self.instruct = instruct
-        self.cache_dir = Path(cache_dir).expanduser()
+        # One folder per voice setup, e.g. tts_cache/Aiden or tts_cache/Aiden_speed1.2
+        folder = slug(voice)
+        if speed != 1.0:
+            folder += f'_speed{speed:g}'
+        if language != 'English':
+            folder += '_' + slug(language)
+        if instruct:
+            folder += '_instruct-' + hashlib.sha1(instruct.encode('utf-8')).hexdigest()[:6]
+        self.cache_dir = Path(cache_dir).expanduser() / folder
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._index_path = self.cache_dir / 'index.json'
+        self._index = load_json(self._index_path) if self._index_path.exists() else {}  # text -> file name
+        self._lock = threading.Lock()
         self.concurrency = max(1, concurrency)
         self.sample_rate = sample_rate
         self.peak = peak
@@ -1083,13 +1097,30 @@ class TTSClient:
         except (urllib.error.URLError, OSError):
             return False
 
-    def _cache_path(self, text):
-        key = json.dumps([self.voice, self.speed, self.language, self.instruct, text], ensure_ascii=False)
-        return self.cache_dir / (hashlib.sha1(key.encode('utf-8')).hexdigest() + '.wav')
+    def _cached_path(self, text):
+        name = self._index.get(text)
+        path = self.cache_dir / name if name else None
+        return path if path and path.exists() and path.stat().st_size > 44 else None
+
+    def _store(self, text, data):
+        """Save a clip as <readable text>.wav (e.g. R.E.A.wav, very_cool.wav) and record it in index.json."""
+        with self._lock:
+            base = re.sub(r'[^A-Za-z0-9.,?!-]+', '_', text.replace('. ', '.')).strip('_.')[:80] or 'phrase'
+            taken = {n.lower() for t, n in self._index.items() if t != text}
+            name, n = base + '.wav', 2
+            while name.lower() in taken:  # different text, same name (e.g. case-only difference)
+                name, n = f'{base}-{n}.wav', n + 1
+            tmp = self.cache_dir / (name + '.tmp')
+            tmp.write_bytes(data)
+            tmp.replace(self.cache_dir / name)
+            self._index[text] = name
+            tmp_index = self._index_path.with_suffix('.tmp')
+            tmp_index.write_text(json.dumps(self._index, ensure_ascii=False, indent=1, sort_keys=True), encoding='utf-8')
+            tmp_index.replace(self._index_path)
 
     def _fetch(self, text):
-        path = self._cache_path(text)
-        if path.exists() and path.stat().st_size > 44:
+        path = self._cached_path(text)
+        if path:
             return path.read_bytes()
         body = {'input': text, 'voice': self.voice, 'response_format': 'wav', 'speed': self.speed,
                 'language': self.language}
@@ -1103,9 +1134,7 @@ class TTSClient:
                 with urllib.request.urlopen(req, timeout=180) as r:
                     data = r.read()
                 parse_wav(data)
-                tmp = path.with_suffix('.tmp')
-                tmp.write_bytes(data)
-                tmp.replace(path)
+                self._store(text, data)
                 return data
             except (urllib.error.URLError, OSError, ValueError) as e:
                 err = e
@@ -1113,7 +1142,7 @@ class TTSClient:
         raise RuntimeError(f'TTS failed for {text!r}: {err}')
 
     def prefetch(self, texts):
-        todo = [t for t in dict.fromkeys(texts) if t and not self._cache_path(t).exists()]
+        todo = [t for t in dict.fromkeys(texts) if t and not self._cached_path(t)]
         if not todo:
             return
         done = 0
@@ -1408,8 +1437,9 @@ def cmd_render(cat, args):
         sys.exit('error: -o/--output names one file; use --out-dir when rendering several')
     tts = None
     if args.tts_url:
+        cache_dir = args.cache_dir or (Path(args.output).parent if args.output else Path(args.out_dir)) / 'tts_cache'
         tts = TTSClient(args.tts_url, args.tts_voice, args.tts_speed, args.tts_language, args.tts_instruct,
-                        args.cache_dir, args.tts_concurrency, args.sample_rate,
+                        cache_dir, args.tts_concurrency, args.sample_rate,
                         10 ** (args.voice_db / 20), not args.no_trim)
         if not args.dry_run and not tts.check():
             print(f'warning: TTS health check failed at {args.tts_url}', file=sys.stderr)
@@ -1507,7 +1537,7 @@ def main(argv=None):
     rp.add_argument('--tts-instruct', default='', help='optional style instruction for the TTS model')
     rp.add_argument('--tts-concurrency', type=int, default=3)
     rp.add_argument('--no-trim', action='store_true', help='keep leading/trailing silence from TTS clips')
-    rp.add_argument('--cache-dir', default='~/.cache/morse_audio_export/tts')
+    rp.add_argument('--cache-dir', help='TTS clip cache (default: tts_cache/ next to the audio files)')
 
     args = p.parse_args(argv)
     cat = Catalog(Path(args.repo))
