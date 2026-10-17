@@ -44,6 +44,9 @@ Examples
   # Use the built-in macOS voices instead of the TTS server
   tools/morse_audio_export.py render ... --tts-engine say --say-voice Daniel --say-rate 140
 
+  # Your own characters (site: Lesson Options > Overrides > Custom Group)
+  tools/morse_audio_export.py render --letters LCDPSG --preset Recognition --group-size 2 --minutes 5
+
   # Override any setting by its preset key
   tools/morse_audio_export.py render ... --set wpm=20 --set voiceEnabled=false
 
@@ -364,6 +367,7 @@ class Settings:
             'stickySets': '', 'ifStickySets': False, 'overrideSize': False, 'overrideSizeMin': 3,
             'overrideSizeMax': 3, 'syncSize': True, 'shuffleIntraGroup': False, 'isShuffledSet': False,
             'ifOverrideTime': False, 'overrideMins': 2,  # Lesson Options > Overrides > Override time (UI only)
+            'customGroup': '', 'ifCustomGroup': False,
             # voice
             'voiceEnabled': False, 'voiceSpelling': True, 'voiceThinkingTime': 0, 'voiceAfterThinkingTime': 0,
             'voiceVolume': 10, 'voiceLastOnly': False, 'voiceRecap': False, 'voiceBufferMaxLength': 1,
@@ -427,6 +431,12 @@ class Settings:
         # MorseLessonPlugin.handleCookies
         if 'stickySets' in given:
             d['stickySets'] = str(given['stickySets'])
+        if 'customGroup' in given:
+            d['customGroup'] = str(given['customGroup'] or '')
+        if 'ifCustomGroup' in given:
+            d['ifCustomGroup'] = to_bool(given['ifCustomGroup'])
+        elif d['customGroup'].strip() and 'customGroup' in given:
+            d['ifCustomGroup'] = True
         if 'overrideMins' in given:
             d['overrideMins'] = js_float(given['overrideMins'], 2)
         for k in ('ifStickySets', 'overrideSize', 'shuffleIntraGroup', 'isShuffledSet', 'ifOverrideTime'):
@@ -663,14 +673,15 @@ def pick(options, value, what):
 # Lesson text generation (randomWordList / shuffleWords)
 # ---------------------------------------------------------------------------
 
-def random_word_list(data, st, rng):
+def random_word_list(data, st, rng, if_custom=False):
     stickys = ''
     if st['ifStickySets'] and st['stickySets'].strip():
         stickys = '|' + re.sub(' ', '|', st['stickySets'].upper().strip().replace('  ', ' '))
     chars = re.findall(f'<.*?>{stickys}|[^<.*?>]|\\W', str(data['letters']).upper())
-    control_time = st['overrideMins'] * 60 if st['ifOverrideTime'] else data.get('practiceSeconds')
-    min_size = st.override_min if st['overrideSize'] else data.get('minWordSize', 1)
-    max_size = st.override_max if st['overrideSize'] else data.get('maxWordSize', 1)
+    # Custom Group always uses the Override time / size values (morseLessonPlugin.randomWordList).
+    control_time = st['overrideMins'] * 60 if (st['ifOverrideTime'] or if_custom) else data.get('practiceSeconds')
+    min_size = st.override_min if (st['overrideSize'] or if_custom) else data.get('minWordSize', 1)
+    max_size = st.override_max if (st['overrideSize'] or if_custom) else data.get('maxWordSize', 1)
     min_size, max_size = js_int(min_size, 1), js_int(max_size, 1)
 
     def word_length(s):
@@ -1392,6 +1403,16 @@ def plan_jobs(cat, args):
         user_sets += [('ifOverrideTime', True), ('overrideMins', args.minutes)]
     if args.no_voice:
         user_sets.append(('voiceEnabled', False))
+    if args.letters:
+        user_sets += [('customGroup', args.letters), ('ifCustomGroup', True)]
+
+    custom_pairs = None
+    if args.preset_file:
+        custom_pairs = [(s['key'], s['value']) for s in load_json(args.preset_file)['morseSettings']
+                        if s['key'] != 'showRaw']
+    probe = build_settings(cat, custom_pairs, None, None, user_sets)
+    if probe['ifCustomGroup'] and probe['customGroup'].strip() and args.text is None and not args.text_file:
+        return plan_custom_group_job(cat, args, user_sets, custom_pairs)
 
     if args.text_file or args.text is not None:
         text = Path(args.text_file).read_text(encoding='utf-8-sig') if args.text_file else args.text
@@ -1450,6 +1471,60 @@ def plan_jobs(cat, args):
             label = f'{cls} / {group} / {lesson["display"]} / {pdisplay}'
             jobs.append(Job(name, st, text_fn, bool(lesson.get('newlineChunking')), label))
     return jobs
+
+
+def find_preset_anywhere(cat, display):
+    """Find a preset by display name in any class's preset set (for --letters without --class)."""
+    matches = {}  # filename -> (display, [class names])
+    for c in cat.class_presets:
+        sets = [lg.get('setFile') for lg in c.get('letterGroups') or []] + [c.get('defaultSetFile')]
+        for set_file in sets:
+            path = cat.src / 'presets' / 'sets' / set_file if set_file else None
+            if path and path.exists():
+                for o in load_json(path).get('options', []):
+                    if o['display'].upper() == display.upper():
+                        # identical files (e.g. BC1_ and BC2_Recognition.json) count as one preset
+                        key = json.dumps(cat.preset_settings(o['filename']), sort_keys=True)
+                        first = next((f for f in matches if matches[f][2] == key), o['filename'])
+                        entry = matches.setdefault(first, (o['display'], [], key))
+                        if c['className'] not in entry[1]:
+                            entry[1].append(c['className'])
+    if not matches:
+        sys.exit(f'error: preset "{display}" not found in any preset set. Try "list --class ... --group ...".')
+    if len(matches) > 1:
+        where = '; '.join(f'{f} ({", ".join(cls)})' for f, (_, cls, _) in matches.items())
+        sys.exit(f'error: preset "{display}" differs between classes: {where}. Add --class and --group.')
+    filename, (name, _, _) = next(iter(matches.items()))
+    return name, filename
+
+
+def plan_custom_group_job(cat, args, user_sets, preset_file_pairs):
+    """Lesson Options > Overrides > Custom Group: random groups from your own characters."""
+    if args.lesson:
+        print('note: --letters (Custom Group) replaces the lesson; --lesson is ignored', file=sys.stderr)
+    group = None
+    if preset_file_pairs is not None:
+        pdisplay, pairs = Path(args.preset_file).stem, preset_file_pairs
+    elif not args.preset or args.preset.upper() == YOUR_SETTINGS.upper():
+        pdisplay, pairs = YOUR_SETTINGS, []
+    elif args.cls and args.group:
+        utype = pick(cat.types(), args.type or 'STUDENT', 'TYPE')
+        cls = pick(cat.classes(utype), args.cls, 'CLASS')
+        group = pick(cat.groups(utype, cls), args.group, 'CONTENT')
+        options = cat.preset_options(cls, group)
+        chosen = pick([o['display'] for o in options], args.preset, 'PRESET')
+        pdisplay, filename = next((o['display'], o['filename']) for o in options if o['display'] == chosen)
+        pairs = cat.preset_settings(filename)
+    else:
+        pdisplay, filename = find_preset_anywhere(cat, args.preset)
+        pairs = cat.preset_settings(filename)
+    st = build_settings(cat, pairs, group, None, user_sets)
+    letters = st['customGroup'].strip().replace(' ', '').upper()
+
+    def text_fn(rng):
+        return random_word_list({'letters': letters}, st, rng, if_custom=True)
+    name = slug('custom', letters, pdisplay)
+    return [Job(name, st, text_fn, st['keepLines'], f'Custom Group {letters} / {pdisplay}')]
 
 
 def run_job(job, cat, args, tts, rng):
@@ -1577,6 +1652,9 @@ def main(argv=None):
     rp.add_argument('--preset-file', help='settings JSON (e.g. LICWSettings.json saved from the site)')
     rp.add_argument('--set', action='append', metavar='KEY=VALUE',
                     help='override a setting by preset key (repeatable), e.g. wpm=20 voiceEnabled=false')
+    rp.add_argument('--letters', metavar='CHARS',
+                    help='Custom Group: random groups from only these characters (e.g. LCDPSG, or KMR<AR>); '
+                         'uses Override size and Override time (default 2 min), replaces the lesson')
     rp.add_argument('--group-size', type=int,
                     help='Override size: letters per random group (sets min = max, like linked size on the site)')
     rp.add_argument('--minutes', type=float,

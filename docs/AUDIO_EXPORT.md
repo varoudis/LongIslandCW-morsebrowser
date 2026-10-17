@@ -76,6 +76,19 @@ By default, files go to `morse_audio/` (git-ignored) and get a name built from c
 
 Names match without regard to case. Use `list` to see the exact names.
 
+### Your own characters (Custom Group)
+
+`--letters` works like the site's **Lesson Options › Overrides › Custom Group**. It builds random groups from only the characters you give and replaces the lesson. Spaces are ignored and prosigns are written in angle brackets.
+
+```bash
+tools/morse_audio_export.py render --letters LCDPSG --preset Recognition --group-size 2 --minutes 5
+tools/morse_audio_export.py render --letters "KMR<AR>" --no-voice
+```
+
+As on the site, Custom Group always uses the Override size (default 3 letters) and Override time (default 2 minutes). Set them with `--group-size` / `overrideSizeMin` / `overrideSizeMax` and `--minutes`. `--preset` takes any preset name. If classes use different presets under the same name (e.g. Call Signs), the script stops and asks for `--class` / `--group`. Without a preset, the site defaults are used (**Your Settings**). A settings file saved from the site with Custom Group switched on (`--preset-file`) also renders as a Custom Group.
+
+### Your own text
+
 Your own text works too:
 
 ```bash
