@@ -39,6 +39,10 @@ jobs:
 
       - run: npm run build --if-present
 
+      # Without .nojekyll, Pages' Jekyll step drops files named node_modules_* (noise chunks),
+      # which breaks the offline download.
+      - run: cp .nojekyll dist/.nojekyll
+
       - name: Deploy to GitHub Pages
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
         # You may pin to the exact commit or the version.
