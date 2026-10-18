@@ -17,6 +17,9 @@ import SettingsOverridesJson from '../../presets/overrides/presetoverrides.json'
 import { SettingsOption } from '../settings/settingsOption'
 import MorseSettingsHandler from '../settings/morseSettingsHandler'
 import LegacyMixinJson from '../../presets/legacymixin/legacymixin.json'
+/** Preset set offered in character picker mode (no class/content to pick a set from). */
+export const CHAR_PICKER_PRESET_SET = 'PICK_CHARS.json'
+
 export default class MorseLessonPlugin implements ICookieHandler {
   autoCloseLessonAccordion:ko.Observable<boolean>
   userTarget:ko.Observable<string>
@@ -472,7 +475,11 @@ export default class MorseLessonPlugin implements ICookieHandler {
       resolvePendingLessonClickClose()
     }
 
-    if (this.selectedClass() === '') {
+    if (this.isCharPickerActive()) {
+      // Picker mode has no CLASS/CONTENT, so offer the picker's own preset set.
+      this.presetSetLoadPending = true
+      MorsePresetSetFileFinder.getMorsePresetSetFile(CHAR_PICKER_PRESET_SET, (data) => handleData(data))
+    } else if (this.selectedClass() === '') {
       // do nothing
       if (forceRefresh || this.selectedClass() === '') {
         this.settingsPresets(sps)

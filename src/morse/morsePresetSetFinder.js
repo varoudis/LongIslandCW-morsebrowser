@@ -24,6 +24,9 @@ export class MorsePresetSetFileFinder {
       case 'INT3.json':
         import('../presets/sets/INT3.json').then(({ default: x }) => afterFound({ found: true, data: x }))
         break
+      case 'PICK_CHARS.json':
+        import('../presets/sets/PICK_CHARS.json').then(({ default: x }) => afterFound({ found: true, data: x }))
+        break
       case 'POL.json':
         import('../presets/sets/POL.json').then(({ default: x }) => afterFound({ found: true, data: x }))
         break

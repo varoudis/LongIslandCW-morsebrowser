@@ -6,6 +6,8 @@ import {
   serializePicked
 } from '../../../src/morse/charPicker/characterPicker'
 import { createLessonPluginForTest } from '../../helpers/createLessonPlugin'
+import { CHAR_PICKER_PRESET_SET } from '../../../src/morse/lessons/morseLessonPlugin'
+import { MorsePresetSetFileFinder } from '../../../src/morse/morsePresetSetFinder'
 
 describe('character picker selection', () => {
   it('serializes in catalog order and parses prosigns back as single values', () => {
@@ -136,5 +138,14 @@ describe('lesson plugin in character picker mode', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('offers the picker preset set instead of a class set', () => {
+    const { plugin, picker } = setup()
+    const spy = vi.spyOn(MorsePresetSetFileFinder, 'getMorsePresetSetFile')
+    picker.mode(true)
+    plugin.getSettingsPresets()
+    expect(spy).toHaveBeenLastCalledWith(CHAR_PICKER_PRESET_SET, expect.any(Function))
+    spy.mockRestore()
   })
 })

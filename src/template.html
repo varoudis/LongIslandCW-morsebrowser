@@ -189,8 +189,9 @@
                                                 id="lessonsPickerTypeToggle"
                                                 data-bs-toggle="dropdown" aria-expanded="false"
                                                 aria-haspopup="listbox"
-                                                aria-labelledby="lessonsPickerTypeLabel lessonsPickerTypeValue">
-                                                <span id="lessonsPickerTypeValue" data-bind="text: lessons.userTarget() || 'Select type'"></span>
+                                                aria-labelledby="lessonsPickerTypeLabel lessonsPickerTypeValue"
+                                                data-bind="enable: !charPicker.mode()">
+                                                <span id="lessonsPickerTypeValue" data-bind="text: charPicker.mode() ? 'Pick Char Mode' : (lessons.userTarget() || 'Select type')"></span>
                                             </button>
                                             <ul class="dropdown-menu w-100" role="listbox" aria-label="Curriculum kind"
                                                 data-bind="foreach: lessons.userTargets">
@@ -209,8 +210,8 @@
                                                 data-bs-toggle="dropdown" aria-expanded="false"
                                                 aria-haspopup="listbox"
                                                 aria-labelledby="lessonsPickerClassLabel lessonsPickerClassValue"
-                                                data-bind="enable: lessons.classes().length > 0">
-                                                <span id="lessonsPickerClassValue" data-bind="text: lessons.selectedClass() || 'Select class'"></span>
+                                                data-bind="enable: !charPicker.mode() && lessons.classes().length > 0">
+                                                <span id="lessonsPickerClassValue" data-bind="text: charPicker.mode() ? 'Pick Char Mode' : (lessons.selectedClass() || 'Select class')"></span>
                                             </button>
                                             <ul class="dropdown-menu w-100" role="listbox" aria-label="Class"
                                                 data-bind="foreach: lessons.classes">

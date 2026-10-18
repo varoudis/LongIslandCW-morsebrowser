@@ -28,14 +28,24 @@ test('picker mode swaps lesson pickers for the character grid', async ({ page })
   await expect(page.locator('#lessonAccordianButton')).toContainText('Pick Characters')
   await expect(page.locator('#lessonsPickerContentToggle')).toBeHidden()
   await expect(page.locator('#lessonsPickerLessonToggle')).toBeHidden()
-  await expect(page.locator('#lessonsPickerClassToggle')).toBeVisible()
-  await expect(page.locator('#lessonsPickerPresetsToggle')).toBeVisible()
+  for (const id of ['#lessonsPickerTypeToggle', '#lessonsPickerClassToggle']) {
+    await expect(page.locator(id)).toBeDisabled()
+    await expect(page.locator(id)).toHaveAccessibleName(/Pick Char Mode/)
+  }
+  await page.locator('#lessonsPickerPresetsToggle').click()
+  const presets = page.getByRole('listbox', { name: 'Settings preset' })
+  for (const name of ['Your Settings', 'Default 12/8', 'Recognition', 'VET', 'Groups of 5']) {
+    await expect(presets.getByRole('option', { name, exact: true })).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
   await expect(page.getByRole('group', { name: 'Letters' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Prosigns' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Character picker mode' }).click()
   await expect(page.locator('#lessonAccordianButton')).toContainText('LICW Lessons')
   await expect(page.locator('#lessonsPickerLessonToggle')).toBeVisible()
+  await expect(page.locator('#lessonsPickerTypeToggle')).toHaveAccessibleName(/TYPE.*STUDENT/)
+  await expect(page.locator('#lessonsPickerClassToggle')).toBeEnabled()
   await expect(page.getByRole('group', { name: 'Letters' })).toBeHidden()
 })
 
@@ -104,8 +114,6 @@ test('a preset still applies as the starting point in picker mode', async ({ pag
   await turnOnPicker(page)
   await page.getByRole('group', { name: 'Letters' }).getByRole('button', { name: 'E', exact: true }).click()
 
-  await page.locator('#lessonsPickerClassToggle').click()
-  await page.getByLabel('Class').getByRole('option', { name: 'BC1', exact: true }).click()
   await page.locator('#lessonsPickerPresetsToggle').click()
   await page.getByRole('listbox', { name: 'Settings preset' }).getByRole('option', { name: 'Recognition' }).click()
 

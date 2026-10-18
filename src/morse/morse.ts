@@ -749,6 +749,8 @@ export class MorseViewModel {
       }
     }
     this.charPicker.letters.subscribe(regenerateSoon)
+    // Swap the PRESETS list between the picker set and the class's set.
+    this.charPicker.mode.subscribe(() => this.lessons.getSettingsPresets())
     this.lessons.overrideMins.subscribe(regenerateSoon)
     this.lessons.trueOverrideMin.subscribe(regenerateSoon)
     this.lessons.trueOverrideMax.subscribe(regenerateSoon)
@@ -756,7 +758,10 @@ export class MorseViewModel {
     if (GeneralUtils.getParameterByName('selectedLesson') || GeneralUtils.getParameterByName('selectedGroup')) {
       this.charPicker.mode(false)
     }
-    // Restored from cookies: build the first set of groups from the saved picks.
+    // Restored from cookies: picker presets and the first set of groups.
+    if (this.charPicker.mode()) {
+      this.lessons.getSettingsPresets()
+    }
     regenerateSoon()
   }
 
