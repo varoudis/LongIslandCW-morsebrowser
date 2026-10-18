@@ -15,6 +15,9 @@ export class MorsePresetSetFileFinder {
       case 'ADV3.json':
         import('../presets/sets/ADV3.json').then(({ default: x }) => afterFound({ found: true, data: x }))
         break
+      case 'EC.json':
+        import('../presets/sets/EC.json').then(({ default: x }) => afterFound({ found: true, data: x }))
+        break
       case 'INT1.json':
         import('../presets/sets/INT1.json').then(({ default: x }) => afterFound({ found: true, data: x }))
         break
