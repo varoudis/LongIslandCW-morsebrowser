@@ -5,6 +5,18 @@
             "filename": "BC1_Default.json"
         },
         {
+            "display": "Default 15/8",
+            "filename": "BC1_Default_15_8.json"
+        },
+        {
+            "display": "Default 18/8",
+            "filename": "BC1_Default_18_8.json"
+        },
+        {
+            "display": "Default 20/8",
+            "filename": "BC1_Default_20_8.json"
+        },
+        {
             "display": "Familiarity",
             "filename": "BC1_FAM_Spell.json"
         },
