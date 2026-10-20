@@ -5,6 +5,18 @@
             "filename": "BC2_Default.json"
         },
         {
+            "display": "Default 15/10",
+            "filename": "BC2_Default_15_10.json"
+        },
+        {
+            "display": "Default 18/10",
+            "filename": "BC2_Default_18_10.json"
+        },
+        {
+            "display": "Default 20/10",
+            "filename": "BC2_Default_20_10.json"
+        },
+        {
             "display": "Familiarity",
             "filename": "BC2_FAM_Spell.json"
         },{
